@@ -342,7 +342,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
           result: undefined,
           state: 'failed',
         });
-        this.publishPromptCompleted(id, 'failed', origin);
+        this.publishPromptCompleted(id, 'failed');
         this.terminalStates.set(id, 'failed');
         waiter.failedEntry = entry;
         return { id };
@@ -550,8 +550,8 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
       this.steered.delete(childId);
     }
     if (prompt.tracked) {
-      if (state === 'cancelled') this.publishPromptAborted(waiter.id, prompt.origin);
-      else this.publishPromptCompleted(waiter.id, state, prompt.origin);
+      if (state === 'cancelled') this.publishPromptAborted(waiter.id);
+      else this.publishPromptCompleted(waiter.id, state);
     }
     this.terminalStates.set(waiter.id, state);
     this.promptWaiters.delete(waiter.id);
@@ -630,7 +630,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
       result: undefined,
       state,
     });
-    this.publishPromptCompleted(waiter.id, state, entry?.meta?.origin as PromptOrigin | undefined);
+    this.publishPromptCompleted(waiter.id, state);
     this.terminalStates.set(waiter.id, state);
     this.promptWaiters.delete(waiter.id);
     this.maybeSettle();
@@ -651,12 +651,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     }
   }
 
-  private publishPromptCompleted(
-    promptId: string,
-    reason: 'completed' | 'failed' | 'blocked',
-    origin?: PromptOrigin,
-  ): void {
-    if (origin?.kind === 'system_trigger') return;
+  private publishPromptCompleted(promptId: string, reason: 'completed' | 'failed' | 'blocked'): void {
     void this.dispatcher.dispatch(
       new PromptCompleted({
         agentId: this.scopeContext.agentId,
@@ -672,13 +667,13 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     readonly origin: PromptOrigin;
     readonly message: ContextMessage;
   }): void {
-    if (input.origin.kind !== 'user') return;
+    if (input.origin.kind !== 'user' && input.origin.kind !== 'system_trigger') return;
     void this.dispatcher.dispatch(
       new PromptQueued({
         agentId: this.scopeContext.agentId,
         promptId: input.promptId,
         content: stripBundledSkillBlocks(input.message),
-        clientMetadata: input.origin.clientMetadata,
+        clientMetadata: input.origin.kind === 'user' ? input.origin.clientMetadata : undefined,
         queueLength: (this.engine?.snapshot().queue.length ?? 0) + 1,
       }),
     );
@@ -694,7 +689,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     },
     status: 'running' | 'queued',
   ): void {
-    if (input.origin.kind !== 'user') return;
+    if (input.origin.kind !== 'user' && input.origin.kind !== 'system_trigger') return;
     void this.dispatcher.dispatch(
       new PromptSubmitted({
         agentId: this.scopeContext.agentId,
@@ -702,14 +697,14 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
         userMessageId: input.userMessageId,
         status,
         content: stripBundledSkillBlocks(input.message),
-        clientMetadata: input.origin.clientMetadata,
+        clientMetadata: input.origin.kind === 'user' ? input.origin.clientMetadata : undefined,
         createdAt: input.createdAt,
       }),
     );
   }
 
   private publishPromptStarted(promptId: string, origin: PromptOrigin): void {
-    if (origin.kind !== 'user') return;
+    if (origin.kind !== 'user' && origin.kind !== 'system_trigger') return;
     void this.dispatcher.dispatch(
       new PromptStarted({
         agentId: this.scopeContext.agentId,
@@ -718,8 +713,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     );
   }
 
-  private publishPromptAborted(promptId: string, origin?: PromptOrigin): void {
-    if (origin?.kind === 'system_trigger') return;
+  private publishPromptAborted(promptId: string): void {
     void this.dispatcher.dispatch(
       new PromptAborted({
         agentId: this.scopeContext.agentId,
@@ -750,11 +744,11 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     if (active !== undefined && active.prompt.id === waiter.id) {
       return this.cancelActiveTurn(undefined, cancellation);
     }
-    const projection = this.promptProjection(waiter.id);
+    const tracked = this.promptProjection(waiter.id)?.tracked === true;
     this.engine?.cancelQueueItem(waiter.id);
     this.settleWaiterCancelled(waiter);
-    if (projection?.tracked === true) {
-      this.publishPromptAborted(waiter.id, projection.origin);
+    if (tracked) {
+      this.publishPromptAborted(waiter.id);
     }
     this.terminalStates.set(waiter.id, 'cancelled');
     this.promptWaiters.delete(waiter.id);

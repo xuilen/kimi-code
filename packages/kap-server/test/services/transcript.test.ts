@@ -4316,6 +4316,21 @@ describe('bindSessionTranscript', () => {
   it('overlays the in-flight turn as running after a backfill', async () => {
     const home = await seedWireHome();
     try {
+      const subWireDir = join(home, 'sessions', 'ws', 's1', 'agents', 'sub-1');
+      await mkdir(subWireDir, { recursive: true });
+      await writeFile(
+        join(subWireDir, 'wire.jsonl'),
+        `${JSON.stringify({
+          type: 'context.append_message',
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: 'sub hi' }],
+            toolCalls: [],
+            origin: { kind: 'user' },
+          },
+          time: new Date().toISOString(),
+        })}\n`,
+      );
       const agents = new FakeAgents();
       agents.add('main', {
         loopStatus: { state: 'running', activeTurnId: 0 },
@@ -4333,13 +4348,14 @@ describe('bindSessionTranscript', () => {
       });
       const store = service.forSessionLive('s1');
       await service.whenReady('s1');
+      await service.ensureAgentHistory('s1', 'sub-1');
       expect(store?.getAgent('main')?.getTurn('t0')).toMatchObject({
         state: 'running',
         triggerPromptId: 'prompt-1',
         prompt: 'hi',
       });
       expect(store?.getAgent('main')?.getPrompt('prompt-1')).toMatchObject({ status: 'running' });
-      expect(store?.getAgent('sub-1')?.getPrompt('prompt-goal')).toBeUndefined();
+      expect(store?.getAgent('sub-1')?.getPrompt('prompt-goal')).toMatchObject({ status: 'running' });
       service.dropSession('s1');
     } finally {
       await rm(home, { recursive: true, force: true });

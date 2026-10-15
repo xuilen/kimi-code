@@ -491,7 +491,7 @@ describe('AgentGoalService', () => {
       expect(goals.getGoal().goal).toBeNull();
     });
 
-    it('steers user input into a running goal continuation without prompt lifecycle events', async () => {
+    it('steers user input into a running goal continuation with full prompt lifecycle events', async () => {
       await ctx.restorePersisted();
       ctx.configure({ tools: ['UpdateGoal'] });
       ctx.mockNextResponse({
@@ -507,7 +507,7 @@ describe('AgentGoalService', () => {
       let continuationTurnId: number | undefined;
       const steered: PromptSteered[] = [];
       const turnSteers: TurnSteer[] = [];
-      const lifecyclePromptIds: string[] = [];
+      const lifecycle: { type: string; promptId: string }[] = [];
       eventBus.subscribe(TurnStarted, (event) => {
         if (event.origin.kind === 'system_trigger' && event.origin.name === 'goal_continuation') {
           continuationPromptId = event.promptId;
@@ -516,10 +516,18 @@ describe('AgentGoalService', () => {
       });
       eventBus.subscribe(PromptSteered, (event) => steered.push(event));
       eventBus.subscribe(TurnSteer, (event) => turnSteers.push(event));
-      eventBus.subscribe(PromptSubmitted, (event) => lifecyclePromptIds.push(event.promptId));
-      eventBus.subscribe(PromptStarted, (event) => lifecyclePromptIds.push(event.promptId));
-      eventBus.subscribe(PromptCompleted, (event) => lifecyclePromptIds.push(event.promptId));
-      eventBus.subscribe(PromptAborted, (event) => lifecyclePromptIds.push(event.promptId));
+      eventBus.subscribe(PromptSubmitted, (event) =>
+        lifecycle.push({ type: 'submitted', promptId: event.promptId }),
+      );
+      eventBus.subscribe(PromptStarted, (event) =>
+        lifecycle.push({ type: 'started', promptId: event.promptId }),
+      );
+      eventBus.subscribe(PromptCompleted, (event) =>
+        lifecycle.push({ type: 'completed', promptId: event.promptId }),
+      );
+      eventBus.subscribe(PromptAborted, (event) =>
+        lifecycle.push({ type: 'aborted', promptId: event.promptId }),
+      );
       let releaseStep!: () => void;
       let markHeld!: () => void;
       const stepHeld = new Promise<void>((resolve) => { markHeld = resolve; });
@@ -552,7 +560,12 @@ describe('AgentGoalService', () => {
       await vi.waitFor(() => expect(turnSteers).toHaveLength(1));
       await loop.settled();
       expect(goals.getGoal().goal).toBeNull();
-      expect(lifecyclePromptIds).not.toContain(continuationPromptId);
+      expect(lifecycle).toEqual([
+        { type: 'submitted', promptId: continuationPromptId },
+        { type: 'started', promptId: continuationPromptId },
+        { type: 'submitted', promptId: steered[0]?.promptIds[0] },
+        { type: 'completed', promptId: continuationPromptId },
+      ]);
     });
 
     it('pauseOnInterrupt parks active goals and no-ops for stopped goals', async () => {
