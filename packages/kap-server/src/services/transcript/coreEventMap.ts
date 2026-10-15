@@ -1420,6 +1420,7 @@ export class AgentTranscriptProjector {
   }
 
   private onPromptQueued(event: PromptQueuedEvent): TranscriptOperation[] {
+    if (event.origin?.kind === 'system_trigger') return [];
     const prompt = this.upsertPrompt(event.promptId, (prev) => ({
       promptId: event.promptId,
       status: 'queued',
@@ -1432,6 +1433,7 @@ export class AgentTranscriptProjector {
   }
 
   private onPromptSubmitted(event: PromptSubmittedEvent): TranscriptOperation[] {
+    if (event.origin?.kind === 'system_trigger') return [];
     const prompt = this.upsertPrompt(event.promptId, (prev) => ({
       promptId: event.promptId,
       status: prev !== undefined && isTerminalPromptStatus(prev.status) ? prev.status : event.status,
@@ -1446,6 +1448,7 @@ export class AgentTranscriptProjector {
   }
 
   private onPromptStarted(event: PromptStartedEvent): TranscriptOperation[] {
+    if (event.origin?.kind === 'system_trigger') return [];
     const prompt = this.upsertPrompt(event.promptId, (prev) => ({
       promptId: event.promptId,
       status: 'running',
@@ -1460,6 +1463,7 @@ export class AgentTranscriptProjector {
   }
 
   private onPromptCompleted(event: PromptCompletedEvent): TranscriptOperation[] {
+    if (event.origin?.kind === 'system_trigger') return [];
     const prompt = this.upsertPrompt(event.promptId, (prev) => ({
       promptId: event.promptId,
       status: event.reason ?? 'completed',
@@ -1474,6 +1478,7 @@ export class AgentTranscriptProjector {
   }
 
   private onPromptAborted(event: PromptAbortedEvent): TranscriptOperation[] {
+    if (event.origin?.kind === 'system_trigger') return [];
     const prompt = this.upsertPrompt(event.promptId, (prev) => ({
       promptId: event.promptId,
       status: 'aborted',

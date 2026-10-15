@@ -14,7 +14,7 @@ import {
 
 import type { IDisposable } from '#/_base/di/lifecycle';
 import { IAgentContextMemoryService } from '#/agent/contextMemory/contextMemory';
-import { USER_PROMPT_ORIGIN } from '#/agent/contextMemory/types';
+import { USER_PROMPT_ORIGIN, type PromptOrigin } from '#/agent/contextMemory/types';
 import { AgentGoalService, IAgentGoalService } from '#/features/goal/goalService';
 import { IGoalDeadlineScheduler } from '#/features/goal/goalDeadlineScheduler';
 
@@ -507,7 +507,7 @@ describe('AgentGoalService', () => {
       let continuationTurnId: number | undefined;
       const steered: PromptSteered[] = [];
       const turnSteers: TurnSteer[] = [];
-      const lifecycle: { type: string; promptId: string }[] = [];
+      const lifecycle: { type: string; promptId: string; origin?: PromptOrigin }[] = [];
       eventBus.subscribe(TurnStarted, (event) => {
         if (event.origin.kind === 'system_trigger' && event.origin.name === 'goal_continuation') {
           continuationPromptId = event.promptId;
@@ -517,16 +517,16 @@ describe('AgentGoalService', () => {
       eventBus.subscribe(PromptSteered, (event) => steered.push(event));
       eventBus.subscribe(TurnSteer, (event) => turnSteers.push(event));
       eventBus.subscribe(PromptSubmitted, (event) =>
-        lifecycle.push({ type: 'submitted', promptId: event.promptId }),
+        lifecycle.push({ type: 'submitted', promptId: event.promptId, origin: event.origin }),
       );
       eventBus.subscribe(PromptStarted, (event) =>
-        lifecycle.push({ type: 'started', promptId: event.promptId }),
+        lifecycle.push({ type: 'started', promptId: event.promptId, origin: event.origin }),
       );
       eventBus.subscribe(PromptCompleted, (event) =>
-        lifecycle.push({ type: 'completed', promptId: event.promptId }),
+        lifecycle.push({ type: 'completed', promptId: event.promptId, origin: event.origin }),
       );
       eventBus.subscribe(PromptAborted, (event) =>
-        lifecycle.push({ type: 'aborted', promptId: event.promptId }),
+        lifecycle.push({ type: 'aborted', promptId: event.promptId, origin: event.origin }),
       );
       let releaseStep!: () => void;
       let markHeld!: () => void;
@@ -560,11 +560,16 @@ describe('AgentGoalService', () => {
       await vi.waitFor(() => expect(turnSteers).toHaveLength(1));
       await loop.settled();
       expect(goals.getGoal().goal).toBeNull();
+      const continuationOrigin = { kind: 'system_trigger', name: 'goal_continuation' };
       expect(lifecycle).toEqual([
-        { type: 'submitted', promptId: continuationPromptId },
-        { type: 'started', promptId: continuationPromptId },
-        { type: 'submitted', promptId: steered[0]?.promptIds[0] },
-        { type: 'completed', promptId: continuationPromptId },
+        { type: 'submitted', promptId: continuationPromptId, origin: continuationOrigin },
+        { type: 'started', promptId: continuationPromptId, origin: continuationOrigin },
+        {
+          type: 'submitted',
+          promptId: steered[0]?.promptIds[0],
+          origin: expect.objectContaining({ kind: 'user' }),
+        },
+        { type: 'completed', promptId: continuationPromptId, origin: continuationOrigin },
       ]);
     });
 

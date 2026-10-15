@@ -342,7 +342,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
           result: undefined,
           state: 'failed',
         });
-        this.publishPromptCompleted(id, 'failed');
+        this.publishPromptCompleted(id, 'failed', origin);
         this.terminalStates.set(id, 'failed');
         waiter.failedEntry = entry;
         return { id };
@@ -550,8 +550,8 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
       this.steered.delete(childId);
     }
     if (prompt.tracked) {
-      if (state === 'cancelled') this.publishPromptAborted(waiter.id);
-      else this.publishPromptCompleted(waiter.id, state);
+      if (state === 'cancelled') this.publishPromptAborted(waiter.id, prompt.origin);
+      else this.publishPromptCompleted(waiter.id, state, prompt.origin);
     }
     this.terminalStates.set(waiter.id, state);
     this.promptWaiters.delete(waiter.id);
@@ -630,7 +630,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
       result: undefined,
       state,
     });
-    this.publishPromptCompleted(waiter.id, state);
+    this.publishPromptCompleted(waiter.id, state, entry?.meta?.origin as PromptOrigin | undefined);
     this.terminalStates.set(waiter.id, state);
     this.promptWaiters.delete(waiter.id);
     this.maybeSettle();
@@ -651,13 +651,18 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     }
   }
 
-  private publishPromptCompleted(promptId: string, reason: 'completed' | 'failed' | 'blocked'): void {
+  private publishPromptCompleted(
+    promptId: string,
+    reason: 'completed' | 'failed' | 'blocked',
+    origin: PromptOrigin | undefined,
+  ): void {
     void this.dispatcher.dispatch(
       new PromptCompleted({
         agentId: this.scopeContext.agentId,
         promptId,
         finishedAt: new Date().toISOString(),
         reason,
+        origin,
       }),
     );
   }
@@ -675,6 +680,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
         content: stripBundledSkillBlocks(input.message),
         clientMetadata: input.origin.kind === 'user' ? input.origin.clientMetadata : undefined,
         queueLength: (this.engine?.snapshot().queue.length ?? 0) + 1,
+        origin: input.origin,
       }),
     );
   }
@@ -699,6 +705,7 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
         content: stripBundledSkillBlocks(input.message),
         clientMetadata: input.origin.kind === 'user' ? input.origin.clientMetadata : undefined,
         createdAt: input.createdAt,
+        origin: input.origin,
       }),
     );
   }
@@ -709,16 +716,18 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
       new PromptStarted({
         agentId: this.scopeContext.agentId,
         promptId,
+        origin,
       }),
     );
   }
 
-  private publishPromptAborted(promptId: string): void {
+  private publishPromptAborted(promptId: string, origin: PromptOrigin | undefined): void {
     void this.dispatcher.dispatch(
       new PromptAborted({
         agentId: this.scopeContext.agentId,
         promptId,
         abortedAt: new Date().toISOString(),
+        origin,
       }),
     );
   }
@@ -744,11 +753,11 @@ export class AgentLoopService extends Disposable implements IAgentLoopService {
     if (active !== undefined && active.prompt.id === waiter.id) {
       return this.cancelActiveTurn(undefined, cancellation);
     }
-    const tracked = this.promptProjection(waiter.id)?.tracked === true;
+    const projection = this.promptProjection(waiter.id);
     this.engine?.cancelQueueItem(waiter.id);
     this.settleWaiterCancelled(waiter);
-    if (tracked) {
-      this.publishPromptAborted(waiter.id);
+    if (projection?.tracked === true) {
+      this.publishPromptAborted(waiter.id, projection.origin);
     }
     this.terminalStates.set(waiter.id, 'cancelled');
     this.promptWaiters.delete(waiter.id);

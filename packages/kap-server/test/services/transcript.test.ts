@@ -2248,6 +2248,16 @@ describe('AgentTranscriptProjector', () => {
       createdAt: '2026-01-01T00:00:04.000Z',
       finishedAt: '2026-01-01T00:00:04.000Z',
     });
+
+    const continuation = { kind: 'system_trigger', name: 'goal_continuation' } as const;
+    feed(ev({ type: 'prompt.submitted', promptId: 'p5', userMessageId: 'm5', status: 'running', content: [{ type: 'text', text: 'continue the goal' }], createdAt: '2026-01-01T00:00:05.000Z', origin: continuation }));
+    feed(ev({ type: 'prompt.queued', promptId: 'p6', content: [{ type: 'text', text: 'queued continuation' }], queueLength: 1, origin: continuation }));
+    feed(ev({ type: 'prompt.started', promptId: 'p5', origin: continuation }));
+    feed(ev({ type: 'prompt.completed', promptId: 'p5', finishedAt: '2026-01-01T00:00:06.000Z', reason: 'completed', origin: continuation }));
+    feed(ev({ type: 'prompt.aborted', promptId: 'p7', abortedAt: '2026-01-01T00:00:07.000Z', origin: continuation }));
+    expect(tx.getPrompt('p5')).toBeUndefined();
+    expect(tx.getPrompt('p6')).toBeUndefined();
+    expect(tx.getPrompt('p7')).toBeUndefined();
   });
 
   it('keeps restored prompt content when steering after a late projector attach', () => {
@@ -4355,7 +4365,7 @@ describe('bindSessionTranscript', () => {
         prompt: 'hi',
       });
       expect(store?.getAgent('main')?.getPrompt('prompt-1')).toMatchObject({ status: 'running' });
-      expect(store?.getAgent('sub-1')?.getPrompt('prompt-goal')).toMatchObject({ status: 'running' });
+      expect(store?.getAgent('sub-1')?.getPrompt('prompt-goal')).toBeUndefined();
       service.dropSession('s1');
     } finally {
       await rm(home, { recursive: true, force: true });
